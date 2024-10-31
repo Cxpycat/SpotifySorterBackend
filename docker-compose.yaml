@@ -1,0 +1,33 @@
+services:
+  web:
+    image: nginx:latest
+    build:
+      context: .
+      dockerfile: _docker/app/Dockerfile
+    volumes:
+      - ./:/var/www
+      - ./_docker/nginx/conf.d:/etc/nginx/conf.d
+    ports:
+      - "8876:80"
+
+  app-backend:
+    build:
+      context: .
+      dockerfile: _docker/app/Dockerfile
+    volumes:
+      - .:/app
+    ports:
+      - "8080:8080"
+
+  mysql:
+    image: mysql:8.0
+    restart: always
+    volumes:
+      - ./tmp/db:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: spotify_db
+      MYSQL_USER: nikita
+      MYSQL_PASSWORD: qwerty
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "8101:3306"

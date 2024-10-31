@@ -1,0 +1,14 @@
+env: "local"
+storage_path: "./storage.db"
+
+database:
+    host: "spotifysorter-mysql-1"
+    port: "3306"
+    user: "root"
+    password: "root"
+    database: "spotify_db"
+
+http_server:
+  address: ":8080"
+  timeout: 5s
+  idle_timeout: 60s
