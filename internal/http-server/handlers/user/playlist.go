@@ -75,7 +75,7 @@ func GetAllPlaylists(log *slog.Logger, user User) http.HandlerFunc {
 
 		log.Info("request decoded", slog.String("email", email))
 
-		userData, err := user.GetUser(email)
+		userData, err := user.GetUserByEmail(email)
 		if err != nil {
 			log.Error("failed to get user data", sl.Err(err))
 			render.JSON(w, r, resp.Error("failed to get user data"))

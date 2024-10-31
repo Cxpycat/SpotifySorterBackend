@@ -68,7 +68,7 @@ func main() {
 	}
 	router.Use(cors.New(corsOptions).Handler)
 
-	router.Post("/auth/code", userHandlers.New(log, storage))
+	router.Post("/auth/code", userHandlers.AuthUser(log, storage))
 
 	router.Get("/user/playlist", userHandlers.GetAllPlaylists(log, storage))
 

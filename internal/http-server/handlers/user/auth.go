@@ -19,20 +19,19 @@ import (
 )
 
 type User interface {
-	SaveUser(email, accessToken, country, name, href, idSpotify, product, uri string) (int64, error)
-	GetUser(email string) (*UserModel.User, error)
+	SaveUser(email, accessToken, country, name, href, idSpotify, product, uri string) (*UserModel.User, error)
+	GetUserByEmail(email string) (*UserModel.User, error)
+	UpdateUser(email, accessToken, country, name, href, product, uri string) (*UserModel.User, error)
 }
 
-func New(log *slog.Logger, user User) http.HandlerFunc {
+func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 	type Request struct {
 		Code  string `json:"code" validate:"required"`
 		State string `json:"state"`
 	}
-
 	type Response struct {
 		resp.Response
 	}
-
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Info("Received request on /auth/code")
 		const op = "handlers.user.New"
@@ -71,14 +70,31 @@ func New(log *slog.Logger, user User) http.HandlerFunc {
 			render.JSON(w, r, resp.Error("failed to obtain user data"))
 			return
 		}
+		existingUser, err := user.GetUserByEmail(userData.Email)
+		if err != nil {
+			log.Error("failed to get user data", sl.Err(err))
+			render.JSON(w, r, resp.Error("failed to get user data"))
+			return
+		}
 
-		idUser, err := user.SaveUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.Href, userData.IdSpotify, userData.Product, userData.Uri)
+		if existingUser != nil {
+			updatedUser, err := user.UpdateUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.Href, userData.Product, userData.Uri)
+			if err != nil {
+				log.Error("failed to update user", sl.Err(err))
+				render.JSON(w, r, resp.Error("failed to update user"))
+				return
+			}
+			render.JSON(w, r, updatedUser)
+			return
+		}
+
+		savedUser, err := user.SaveUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.Href, userData.IdSpotify, userData.Product, userData.Uri)
 		if err != nil {
 			log.Error("failed to save user", sl.Err(err))
 			render.JSON(w, r, resp.Error("failed to save user"))
 			return
 		}
-		userData.Id = idUser
+		userData.Id = savedUser.Id
 
 		log.Info("user saved", slog.Any("userData", userData))
 		render.JSON(w, r, userData)
@@ -140,5 +156,4 @@ func getUserData(log *slog.Logger, accessCredentials *UserModel.AccessCredential
 	}
 
 	return &user, nil
-
 }

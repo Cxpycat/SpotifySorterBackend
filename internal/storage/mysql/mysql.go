@@ -60,7 +60,7 @@ func New(cfg Config) (*Storage, error) {
 	return &Storage{db: db}, nil
 }
 
-func (s *Storage) SaveUser(email, accessToken, country, name, href, idSpotify, product, uri string) (int64, error) {
+func (s *Storage) SaveUser(email, accessToken, country, name, href, idSpotify, product, uri string) (*UserModel.User, error) {
 	const op = "storage.mysql.SaveUser"
 
 	stmt, err := s.db.Prepare(`
@@ -68,25 +68,37 @@ func (s *Storage) SaveUser(email, accessToken, country, name, href, idSpotify, p
         VALUES(?, ?, ?, ?, ?, ?, ?, ?)
     `)
 	if err != nil {
-		return 0, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer stmt.Close()
 
 	res, err := stmt.Exec(email, accessToken, country, name, href, idSpotify, product, uri)
 	if err != nil {
-		return 0, fmt.Errorf("%s: %w", op, err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	id, err := res.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("%s: failed to get last insert id: %w", op, err)
+		return nil, fmt.Errorf("%s: failed to get last insert id: %w", op, err)
 	}
 
-	return id, nil
+	user := &UserModel.User{
+		Id:          id,
+		Email:       email,
+		AccessToken: accessToken,
+		Country:     country,
+		Name:        name,
+		Href:        href,
+		IdSpotify:   idSpotify,
+		Product:     product,
+		Uri:         uri,
+	}
+
+	return user, nil
 }
 
-func (s *Storage) GetUser(email string) (*UserModel.User, error) {
-	const op = "storage.mysql.GetUser"
+func (s *Storage) GetUserByEmail(email string) (*UserModel.User, error) {
+	const op = "storage.mysql.GetUserByEmail"
 
 	stmt, err := s.db.Prepare(`
         SELECT id, name, email, access_token, country, href, id_spotify, product, uri 
@@ -118,4 +130,30 @@ func (s *Storage) GetUser(email string) (*UserModel.User, error) {
 	}
 
 	return &user, nil
+}
+
+func (s *Storage) UpdateUser(email, accessToken, country, name, href, product, uri string) (*UserModel.User, error) {
+	const op = "storage.mysql.UpdateUser"
+
+	stmt, err := s.db.Prepare(`
+        UPDATE users
+        SET access_token = ?, country = ?, name = ?, href = ?, product = ?, uri = ?
+        WHERE email = ?;
+    `)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(accessToken, country, name, href, product, uri, email)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	user, err := s.GetUserByEmail(email)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return user, nil
 }
