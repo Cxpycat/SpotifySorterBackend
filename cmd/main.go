@@ -69,8 +69,8 @@ func main() {
 	router.Use(cors.New(corsOptions).Handler)
 
 	router.Post("/auth/code", userHandlers.AuthUser(log, storage))
-
 	router.Get("/user/playlist", userHandlers.GetAllPlaylists(log, storage))
+	router.Get("/user/playlist/{id}", userHandlers.GetPlaylistById(log, storage))
 
 	log.Info("starting server", slog.String("address", cfg.Address))
 
