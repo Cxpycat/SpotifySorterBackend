@@ -4,24 +4,26 @@ import (
 	resp "SpotifySorter/internal/api/response"
 	"SpotifySorter/internal/lib/client/spotify"
 	sl "SpotifySorter/internal/lib/logger/slog"
-	UserModel "SpotifySorter/models"
+	userModel "SpotifySorter/models"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
+	"github.com/golang-jwt/jwt/v4"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 type User interface {
-	SaveUser(email, accessToken, country, name, href, idSpotify, product, uri string) (*UserModel.User, error)
-	GetUserByEmail(email string) (*UserModel.User, error)
-	UpdateUser(email, accessToken, country, name, href, product, uri string) (*UserModel.User, error)
+	SaveUser(email, accessToken, spotifyAccessToken, country, name, idSpotify, product string) (*userModel.User, error)
+	GetUserByEmail(email string) (*userModel.User, error)
+	UpdateUser(email, spotifyAccessToken, country, name, idSpotify, product string) (*userModel.User, error)
 }
 
 func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
@@ -31,7 +33,9 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 	}
 	type Response struct {
 		resp.Response
+		User userModel.Response `json:"user"`
 	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.user.AuthUser"
 		log = log.With(slog.String("op", op))
@@ -63,32 +67,52 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 			render.JSON(w, r, resp.Error("failed to get user data"))
 			return
 		}
-		_, err = user.GetUserByEmail(userData.Email)
-		if errors.Is(err, sql.ErrNoRows) {
-			savedUser, err := user.SaveUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.Href, userData.IdSpotify, userData.Product, userData.Uri)
-			if err != nil {
-				log.Error("failed to save user", sl.Err(err))
-				render.JSON(w, r, resp.Error("failed to save user"))
+
+		// Пытаемся получить пользователя
+		savedUser, err := user.GetUserByEmail(userData.Email)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				// Если пользователь не найден, создаем нового
+				token, err := GenerateToken()
+				if err != nil {
+					log.Error("failed to generate JWT", sl.Err(err))
+					render.JSON(w, r, resp.Error("failed to generate JWT"))
+					return
+				}
+
+				savedUser, err = user.SaveUser(userData.Email, token, accessCredentials.AccessToken, userData.Country, userData.Name, userData.IdSpotify, userData.Product)
+				if err != nil {
+					log.Error("failed to save user", sl.Err(err))
+					render.JSON(w, r, resp.Error("failed to save user"))
+					return
+				}
+			} else {
+				log.Error("failed to get user by email", sl.Err(err))
+				render.JSON(w, r, resp.Error("failed to get user by email"))
 				return
 			}
-			userData.Id = savedUser.Id
-
-			render.JSON(w, r, userData)
-			return
 		} else {
-			updatedUser, err := user.UpdateUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.Href, userData.Product, userData.Uri)
+			_, err = user.UpdateUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.IdSpotify, userData.Product)
 			if err != nil {
 				log.Error("failed to update user", sl.Err(err))
 				render.JSON(w, r, resp.Error("failed to update user"))
 				return
 			}
-			render.JSON(w, r, updatedUser)
-			return
 		}
+
+		render.JSON(w, r, Response{
+			Response: resp.OK(),
+			User: userModel.Response{
+				Name:        savedUser.Name,
+				AccessToken: savedUser.AccessToken,
+				Email:       savedUser.Email,
+				IdSpotify:   savedUser.IdSpotify,
+			},
+		})
 	}
 }
 
-func sendCode(log *slog.Logger, code string) (*UserModel.AccessCredentials, error) {
+func sendCode(log *slog.Logger, code string) (*userModel.AccessTokensByCode, error) {
 	data := url.Values{}
 	data.Set("code", code)
 	data.Set("redirect_uri", os.Getenv("SPOTIFY_REDIRECT_URI"))
@@ -119,7 +143,7 @@ func sendCode(log *slog.Logger, code string) (*UserModel.AccessCredentials, erro
 	}
 	defer resp.Body.Close()
 
-	var userData UserModel.AccessCredentials
+	var userData userModel.AccessTokensByCode
 	if err := json.NewDecoder(resp.Body).Decode(&userData); err != nil {
 		log.Error("failed to decode response from Spotify", sl.Err(err))
 		return nil, errors.New("failed to decode response from Spotify")
@@ -128,18 +152,29 @@ func sendCode(log *slog.Logger, code string) (*UserModel.AccessCredentials, erro
 	return &userData, nil
 }
 
-func getUserData(log *slog.Logger, accessCredentials *UserModel.AccessCredentials) (*UserModel.User, error) {
+func getUserData(log *slog.Logger, accessCredentials *userModel.AccessTokensByCode) (*userModel.User, error) {
 	response, err := spotify.GetRequest(log, accessCredentials.AccessToken, "me")
 	if err != nil {
 		log.Error("failed to get response from Spotify", sl.Err(err))
 		return nil, errors.New("failed to get response from Spotify")
 	}
 
-	var user UserModel.User
+	var user userModel.User
 	if err := json.Unmarshal(response, &user); err != nil {
 		log.Error("failed to decode response", sl.Err(err))
 		return nil, errors.New("failed to decode response from Spotify")
 	}
 
 	return &user, nil
+}
+
+func GenerateToken() (string, error) {
+	claims := userModel.Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(72 * time.Hour)),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte("your-secret-key"))
 }

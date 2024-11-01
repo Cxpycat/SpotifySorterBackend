@@ -1,7 +1,7 @@
 package mysql
 
 import (
-	UserModel "SpotifySorter/models"
+	userModel "SpotifySorter/models"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -40,14 +40,12 @@ func Init(cfg Config) (*Storage, error) {
 			id INT AUTO_INCREMENT PRIMARY KEY,
 			name VARCHAR(255) NOT NULL,
 			email VARCHAR(255) UNIQUE NOT NULL,
-			access_token TEXT,
-			country VARCHAR(50),
-			href VARCHAR(255),
-			id_spotify VARCHAR(255),
-			product VARCHAR(100),
-			uri VARCHAR(255)
-		);
-`)
+			spotify_access_token TEXT,
+			country VARCHAR(2),
+			id_spotify VARCHAR(255) UNIQUE NOT NULL,
+			product VARCHAR(20),
+			access_token TEXT);
+	`)
 
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
@@ -61,85 +59,112 @@ func Init(cfg Config) (*Storage, error) {
 	return &Storage{db: db}, nil
 }
 
-func (s *Storage) SaveUser(email, accessToken, country, name, href, idSpotify, product, uri string) (*UserModel.User, error) {
+func (s *Storage) SaveUser(email, accessToken, spotifyAccessToken, country, name, idSpotify, product string) (*userModel.User, error) {
 	const op = "storage.mysql.SaveUser"
 
 	stmt, err := s.db.Prepare(`
-        INSERT INTO users(email, access_token, country, name, href, id_spotify, product, uri)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO users(email, access_token, spotify_access_token, country, name, id_spotify, product)
+        VALUES(?, ?, ?, ?, ?, ?, ?)
     `)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-	defer stmt.Close()
 
-	res, err := stmt.Exec(email, accessToken, country, name, href, idSpotify, product, uri)
+	res, err := stmt.Exec(email, accessToken, spotifyAccessToken, country, name, idSpotify, product)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	id, err := res.LastInsertId()
+	_, err = res.LastInsertId()
 	if err != nil {
 		return nil, fmt.Errorf("%s: failed to get last insert id: %w", op, err)
 	}
 
-	user := &UserModel.User{
-		Id:          id,
-		Email:       email,
-		AccessToken: accessToken,
-		Country:     country,
-		Name:        name,
-		Href:        href,
-		IdSpotify:   idSpotify,
-		Product:     product,
-		Uri:         uri,
+	user := &userModel.User{
+		Email:              email,
+		AccessToken:        accessToken,
+		SpotifyAccessToken: spotifyAccessToken,
+		Country:            country,
+		Name:               name,
+		IdSpotify:          idSpotify,
+		Product:            product,
 	}
 
 	return user, nil
 }
 
-func (s *Storage) GetUserByEmail(email string) (*UserModel.User, error) {
-	stmt, err := s.db.Prepare(`SELECT id, name, email, access_token, country, href, id_spotify, product, uri FROM users WHERE email = ?`)
+func (s *Storage) GetUserByEmail(email string) (*userModel.User, error) {
+	stmt, err := s.db.Prepare(`SELECT * FROM users WHERE email = ?`)
 
-	var user UserModel.User
-	row := stmt.QueryRow(email)
-	err = row.Scan(
+	if err != nil {
+		return nil, err
+	}
+
+	var user userModel.User
+	err = stmt.QueryRow(email).Scan(
 		&user.Id,
 		&user.Name,
 		&user.Email,
-		&user.AccessToken,
+		&user.SpotifyAccessToken,
 		&user.Country,
-		&user.Href,
 		&user.IdSpotify,
 		&user.Product,
-		&user.Uri,
+		&user.AccessToken,
 	)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sql.ErrNoRows
-		} else {
-			return nil, err
 		}
+		return nil, err
 	}
 
 	return &user, nil
 }
 
-func (s *Storage) UpdateUser(email, accessToken, country, name, href, product, uri string) (*UserModel.User, error) {
+func (s *Storage) GetUserByAccessToken(accessToken string) (*userModel.User, error) {
+	stmt, err := s.db.Prepare(`SELECT * FROM users WHERE access_token = ?`)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var user userModel.User
+	err = stmt.QueryRow(accessToken).Scan(
+		&user.Id,
+		&user.Name,
+		&user.Email,
+		&user.SpotifyAccessToken,
+		&user.Country,
+		&user.IdSpotify,
+		&user.Product,
+		&user.AccessToken,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, err
+	}
+
+	return &user, nil
+
+}
+
+func (s *Storage) UpdateUser(email, spotifyAccessToken, country, name, idSpotify, product string) (*userModel.User, error) {
 	const op = "storage.mysql.UpdateUser"
 
 	stmt, err := s.db.Prepare(`
         UPDATE users
-        SET access_token = ?, country = ?, name = ?, href = ?, product = ?, uri = ?
+        SET spotify_access_token = ?, country = ?, name = ?, id_spotify = ?, product = ?
         WHERE email = ?;
     `)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
-	defer stmt.Close()
 
-	_, err = stmt.Exec(accessToken, country, name, href, product, uri, email)
+	_, err = stmt.Exec(spotifyAccessToken, country, name, idSpotify, product, email)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}

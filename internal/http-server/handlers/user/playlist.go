@@ -2,12 +2,14 @@ package user
 
 import (
 	resp "SpotifySorter/internal/api/response"
+	jwtMiddleware "SpotifySorter/internal/http-server/middleware/jwt"
 	"SpotifySorter/internal/lib/client/spotify"
 	sl "SpotifySorter/internal/lib/logger/slog"
 	"SpotifySorter/internal/storage"
 	"encoding/json"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
+
 	"log/slog"
 	"net/http"
 )
@@ -60,20 +62,11 @@ func GetAllPlaylists(log *slog.Logger, user User) http.HandlerFunc {
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.playlist.GetAllPlaylists"
-
 		log = log.With(slog.String("op", op))
 
-		email := r.URL.Query().Get("email")
-		if email == "" {
-			log.Error("email parameter is missing")
-			render.JSON(w, r, resp.Error("email parameter is required"))
-			return
-		}
-
-		userData, err := user.GetUserByEmail(email)
-		if err != nil {
-			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
-			render.JSON(w, r, resp.Error(storage.ErrUserNotFound.Error()))
+		userData := jwtMiddleware.GetUserFromContext(r.Context())
+		if userData == nil {
+			http.Error(w, "User not found", http.StatusUnauthorized)
 			return
 		}
 

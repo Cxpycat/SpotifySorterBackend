@@ -3,6 +3,7 @@ package main
 import (
 	"SpotifySorter/internal/config"
 	userHandlers "SpotifySorter/internal/http-server/handlers/user"
+	jwtMiddleware "SpotifySorter/internal/http-server/middleware/jwt"
 	"SpotifySorter/internal/lib/logger/handlers/slogpretty"
 	"SpotifySorter/internal/lib/logger/slog"
 	"SpotifySorter/internal/storage/mysql"
@@ -32,10 +33,10 @@ func main() {
 
 	cfg := config.MustLoad()
 
-	log := setupLogger(cfg.Env)
+	logger := setupLogger(cfg.Env)
 
-	log.Info("Starting application")
-	log.Debug("Environment: %s", cfg)
+	logger.Info("Starting application")
+	//logger.Debug("Environment:", cfg)
 
 	dbConfig := mysql.Config{
 		Host:     cfg.Database.Host,
@@ -47,78 +48,58 @@ func main() {
 
 	storage, err := mysql.Init(dbConfig)
 	if err != nil {
-		log.Error("failed to init storage", sl.Err(err))
+		logger.Error("failed to init storage", sl.Err(err))
 		os.Exit(1)
 	}
 
-	log.Info("Starting application")
+	logger.Info("Starting application")
 	router := chi.NewRouter()
-	log.Info("Router created")
+	logger.Info("Router created")
 
 	router.Use(middleware.RequestID)
-	//router.Use(mwLogger.New(log))
+	//router.Use(mwLogger.New(logger))
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
 
-	corsOptions := cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type", "Authorization"},
-		AllowCredentials: true,
-	}
-	router.Use(cors.New(corsOptions).Handler)
+	corsMiddleware(router)
 
-	router.Post("/auth/code", userHandlers.AuthUser(log, storage))
-	router.Get("/user/playlist", userHandlers.GetAllPlaylists(log, storage))
-	router.Get("/user/playlist/{id}", userHandlers.GetPlaylistById(log, storage))
+	router.Post("/auth/code", userHandlers.AuthUser(logger, storage))
 
-	log.Info("starting server", slog.String("address", cfg.Address))
+	router.Group(func(r chi.Router) {
+		r.Use(jwtMiddleware.JWTMiddleware(os.Getenv("JWT_SECRET"), storage))
+		r.Get("/user/playlist", userHandlers.GetAllPlaylists(logger, storage))
+		r.Get("/user/playlist/{id}", userHandlers.GetPlaylistById(logger, storage))
+	})
+
+	logger.Info("Starting server")
 
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	srv := &http.Server{
-		Addr:         cfg.Address,
-		Handler:      router,
-		ReadTimeout:  cfg.HTTPServer.Timeout,
-		WriteTimeout: cfg.HTTPServer.Timeout,
-		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
-	}
-	go func() {
-		if err := srv.ListenAndServe(); err != nil {
-			log.Error("failed to start server")
-		}
-	}()
-
-	log.Info("server started")
+	initServer(cfg, router, logger)
+	logger.Info("server started")
 
 	<-done
-	log.Info("stopping server")
+	logger.Info("stopping server")
 
-	log.Info("server stopped")
+	logger.Info("server stopped")
 }
 
 func setupLogger(env string) *slog.Logger {
-	var log *slog.Logger
+	var logger *slog.Logger
 
 	switch env {
 	case envLocal:
-		log = setupPrettySlog()
+		logger = setupPrettySlog()
 	case envDev:
-		log = slog.New(
-			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}),
-		)
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	case envProd:
-		log = slog.New(
-			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
-		)
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	default:
-		log = slog.New(
-			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
-		)
+		logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	}
 
-	return log
+	return logger
 }
 
 func setupPrettySlog() *slog.Logger {
@@ -131,4 +112,31 @@ func setupPrettySlog() *slog.Logger {
 	handler := opts.NewPrettyHandler(os.Stdout)
 
 	return slog.New(handler)
+}
+
+func corsMiddleware(router *chi.Mux) {
+	corsOptions := cors.Options{
+		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		AllowCredentials: true,
+	}
+	router.Use(cors.New(corsOptions).Handler)
+}
+
+func initServer(cfg *config.Config, router *chi.Mux, logger *slog.Logger) {
+	{
+		srv := &http.Server{
+			Addr:         cfg.Address,
+			Handler:      router,
+			ReadTimeout:  cfg.HTTPServer.Timeout,
+			WriteTimeout: cfg.HTTPServer.Timeout,
+			IdleTimeout:  cfg.HTTPServer.IdleTimeout,
+		}
+		go func() {
+			if err := srv.ListenAndServe(); err != nil {
+				logger.Error("failed to start server")
+			}
+		}()
+	}
 }
