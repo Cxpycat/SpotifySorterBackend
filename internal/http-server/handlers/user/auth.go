@@ -69,7 +69,7 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 		existingUser, err := user.GetUserByEmail(userData.Email)
 		if err != nil {
 			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
-			render.JSON(w, r, storage.ErrUserNotFound)
+			render.JSON(w, r, resp.Error(storage.ErrUserNotFound.Error()))
 			return
 		}
 

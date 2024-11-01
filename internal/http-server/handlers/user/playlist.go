@@ -73,7 +73,7 @@ func GetAllPlaylists(log *slog.Logger, user User) http.HandlerFunc {
 		userData, err := user.GetUserByEmail(email)
 		if err != nil {
 			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
-			render.JSON(w, r, storage.ErrUserNotFound)
+			render.JSON(w, r, resp.Error(storage.ErrUserNotFound.Error()))
 			return
 		}
 
@@ -210,7 +210,7 @@ func GetPlaylistById(log *slog.Logger, user User) http.HandlerFunc {
 		userData, err := user.GetUserByEmail(email)
 		if err != nil {
 			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
-			render.JSON(w, r, storage.ErrUserNotFound)
+			render.JSON(w, r, resp.Error(storage.ErrUserNotFound.Error()))
 			return
 		}
 
