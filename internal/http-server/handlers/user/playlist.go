@@ -4,9 +4,9 @@ import (
 	resp "SpotifySorter/internal/api/response"
 	"SpotifySorter/internal/lib/client/spotify"
 	sl "SpotifySorter/internal/lib/logger/slog"
+	"SpotifySorter/internal/storage"
 	"encoding/json"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"log/slog"
 	"net/http"
@@ -59,13 +59,9 @@ func GetAllPlaylists(log *slog.Logger, user User) http.HandlerFunc {
 		} `json:"items"`
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Info("Received request on /user/playlist")
-		const op = "handlers.user.GetAllPlaylists"
+		const op = "handlers.playlist.GetAllPlaylists"
 
-		log = log.With(
-			slog.String("op", op),
-			slog.String("request_id", middleware.GetReqID(r.Context())),
-		)
+		log = log.With(slog.String("op", op))
 
 		email := r.URL.Query().Get("email")
 		if email == "" {
@@ -74,16 +70,15 @@ func GetAllPlaylists(log *slog.Logger, user User) http.HandlerFunc {
 			return
 		}
 
-		log.Info("request decoded", slog.String("email", email))
-
 		userData, err := user.GetUserByEmail(email)
 		if err != nil {
-			log.Error("failed to get user data", sl.Err(err))
-			render.JSON(w, r, resp.Error("failed to get user data"))
+			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
+			render.JSON(w, r, storage.ErrUserNotFound)
 			return
 		}
 
 		response, err := spotify.GetRequest(log, userData.AccessToken, "users/"+userData.IdSpotify+"/playlists")
+
 		if err != nil {
 			log.Error("failed to get all playlists from Spotify", sl.Err(err))
 			render.JSON(w, r, resp.Error("failed to get all playlists from Spotify"))
@@ -201,14 +196,9 @@ func GetPlaylistById(log *slog.Logger, user User) http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		const op = "handlers.playlist.GetPlaylistById"
 
-		log.Info("Received request on /user/playlist")
-		const op = "handlers.user.GetAllPlaylists"
-
-		log = log.With(
-			slog.String("op", op),
-			slog.String("request_id", middleware.GetReqID(r.Context())),
-		)
+		log = log.With(slog.String("op", op))
 
 		email := r.URL.Query().Get("email")
 		if email == "" {
@@ -217,12 +207,10 @@ func GetPlaylistById(log *slog.Logger, user User) http.HandlerFunc {
 			return
 		}
 
-		log.Info("request decoded", slog.String("email", email))
-
 		userData, err := user.GetUserByEmail(email)
 		if err != nil {
-			log.Error("failed to get user data", sl.Err(err))
-			render.JSON(w, r, resp.Error("failed to get user data"))
+			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
+			render.JSON(w, r, storage.ErrUserNotFound)
 			return
 		}
 
@@ -230,7 +218,7 @@ func GetPlaylistById(log *slog.Logger, user User) http.HandlerFunc {
 
 		response, err := spotify.GetRequest(log, userData.AccessToken, "playlists/"+id+"/tracks/")
 		if err != nil {
-			log.Error("failed to get user data", sl.Err(err))
+			log.Error("Error getting playlist by ID", sl.Err(err))
 			http.Error(w, "Error getting playlist by ID", http.StatusInternalServerError)
 			return
 		}

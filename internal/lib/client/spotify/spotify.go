@@ -27,9 +27,14 @@ func GetRequest(log *slog.Logger, accessToken, endpoint string) ([]byte, error) 
 
 	log.Info("response received", slog.String("url", "https://api.spotify.com/v1/"+endpoint), slog.Int("status", resp.StatusCode))
 
+	if resp.StatusCode == http.StatusForbidden {
+		log.Error("unauthorized")
+		return nil, errors.New("unauthorized")
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		log.Error("unexpected response status", slog.Int("status", resp.StatusCode))
-		return nil, errors.New("unexpected response status: " + http.StatusText(resp.StatusCode))
+		log.Error("bad request", slog.Any("body", resp.Body))
+		return nil, errors.New("bad request")
 	}
 
 	body, err := io.ReadAll(resp.Body)

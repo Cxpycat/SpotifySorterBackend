@@ -4,11 +4,11 @@ import (
 	resp "SpotifySorter/internal/api/response"
 	"SpotifySorter/internal/lib/client/spotify"
 	sl "SpotifySorter/internal/lib/logger/slog"
+	"SpotifySorter/internal/storage"
 	UserModel "SpotifySorter/models"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/go-playground/validator/v10"
 	"log/slog"
@@ -33,12 +33,10 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 		resp.Response
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Info("Received request on /auth/code")
-		const op = "handlers.user.New"
+		const op = "handlers.user.AuthUser"
 
 		log = log.With(
 			slog.String("op", op),
-			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
 		var req Request
@@ -49,8 +47,6 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 			return
 		}
 
-		log.Info("request decoded", slog.Any("request.auth.New", req))
-
 		if err := validator.New().Struct(req); err != nil {
 			log.Error("invalid request", sl.Err(err))
 			render.JSON(w, r, resp.ValidationError(err.(validator.ValidationErrors)))
@@ -59,21 +55,21 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 
 		accessCredentials, err := sendCode(log, req.Code)
 		if err != nil {
-			log.Error("failed to obtain user data", sl.Err(err))
-			render.JSON(w, r, resp.Error("failed to obtain user data"))
+			log.Error("failed to send code user", sl.Err(err))
+			render.JSON(w, r, resp.Error("failed to send code user"))
 			return
 		}
 
 		userData, err := getUserData(log, accessCredentials)
 		if err != nil {
 			log.Error("failed to get user data", sl.Err(err))
-			render.JSON(w, r, resp.Error("failed to obtain user data"))
+			render.JSON(w, r, resp.Error("failed to get user data"))
 			return
 		}
 		existingUser, err := user.GetUserByEmail(userData.Email)
 		if err != nil {
-			log.Error("failed to get user data", sl.Err(err))
-			render.JSON(w, r, resp.Error("failed to get user data"))
+			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
+			render.JSON(w, r, storage.ErrUserNotFound)
 			return
 		}
 
@@ -96,7 +92,6 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 		}
 		userData.Id = savedUser.Id
 
-		log.Info("user saved", slog.Any("userData", userData))
 		render.JSON(w, r, userData)
 	}
 }
@@ -104,7 +99,7 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 func sendCode(log *slog.Logger, code string) (*UserModel.AccessCredentials, error) {
 	data := url.Values{}
 	data.Set("code", code)
-	data.Set("redirect_uri", "http://localhost:5173/redirect")
+	data.Set("redirect_uri", os.Getenv("SPOTIFY_REDIRECT_URI"))
 	data.Set("grant_type", "authorization_code")
 
 	reqToSpotify, err := http.NewRequest("POST", "https://accounts.spotify.com/api/token", strings.NewReader(data.Encode()))
@@ -116,8 +111,8 @@ func sendCode(log *slog.Logger, code string) (*UserModel.AccessCredentials, erro
 	clientID := os.Getenv("SPOTIFY_CLIENT_ID")
 	clientSecret := os.Getenv("SPOTIFY_CLIENT_SECRET")
 	if clientID == "" || clientSecret == "" {
-		log.Error("Spotify client ID or secret not set")
-		return nil, errors.New("spotify client ID or secret not set")
+		log.Error("SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET is not set")
+		return nil, errors.New("SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET is not set")
 	}
 	auth := clientID + ":" + clientSecret
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
@@ -127,18 +122,17 @@ func sendCode(log *slog.Logger, code string) (*UserModel.AccessCredentials, erro
 	client := &http.Client{}
 	resp, err := client.Do(reqToSpotify)
 	if err != nil {
-		log.Error("failed to send request", sl.Err(err))
+		log.Error("failed to send request to Spotify", sl.Err(err))
 		return nil, errors.New("failed to send request to Spotify")
 	}
 	defer resp.Body.Close()
 
 	var userData UserModel.AccessCredentials
 	if err := json.NewDecoder(resp.Body).Decode(&userData); err != nil {
-		log.Error("failed to decode response", sl.Err(err))
+		log.Error("failed to decode response from Spotify", sl.Err(err))
 		return nil, errors.New("failed to decode response from Spotify")
 	}
 
-	log.Info("access token received", slog.Any("userData", userData))
 	return &userData, nil
 }
 

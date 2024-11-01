@@ -19,7 +19,7 @@ type Config struct {
 	Database string
 }
 
-func New(cfg Config) (*Storage, error) {
+func Init(cfg Config) (*Storage, error) {
 	const op = "storage.mysql.New"
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s",
