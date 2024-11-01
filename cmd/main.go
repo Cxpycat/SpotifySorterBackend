@@ -35,7 +35,7 @@ func main() {
 	log := setupLogger(cfg.Env)
 
 	log.Info("Starting application")
-	log.Debug("Environment: %s", cfg.Env)
+	log.Debug("Environment: %s", cfg)
 
 	dbConfig := mysql.Config{
 		Host:     cfg.Database.Host,
@@ -47,7 +47,7 @@ func main() {
 
 	storage, err := mysql.New(dbConfig)
 	if err != nil {
-		log.Error("Failed to initialize storage", sl.Err(err))
+		log.Error("failed to init storage", sl.Err(err))
 		os.Exit(1)
 	}
 
@@ -61,8 +61,8 @@ func main() {
 	router.Use(middleware.URLFormat)
 
 	corsOptions := cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173"}, // Укажите допустимые источники
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,
 	}
@@ -78,8 +78,11 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	srv := &http.Server{
-		Addr:    cfg.Address,
-		Handler: router,
+		Addr:         cfg.Address,
+		Handler:      router,
+		ReadTimeout:  cfg.HTTPServer.Timeout,
+		WriteTimeout: cfg.HTTPServer.Timeout,
+		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
 	}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
@@ -91,6 +94,7 @@ func main() {
 
 	<-done
 	log.Info("stopping server")
+
 	log.Info("server stopped")
 }
 

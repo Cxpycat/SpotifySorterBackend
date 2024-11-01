@@ -23,7 +23,7 @@ services:
     image: mysql:8.0
     restart: always
     volumes:
-      - ./tmp/db:/var/lib/mysql
+      - ./storage/tmp/db:/var/lib/mysql
     environment:
       MYSQL_DATABASE: spotify_db
       MYSQL_USER: nikita
