@@ -152,6 +152,31 @@ func (s *Storage) GetUserByAccessToken(accessToken string) (*userModel.User, err
 
 }
 
+func (s *Storage) UpdateAccessTokenUser(accessToken string, userModel *userModel.User) (*userModel.User, error) {
+	const op = "storage.mysql.UpdateAccessTokenUser"
+
+	stmt, err := s.db.Prepare(`
+        UPDATE users
+        SET access_token = ?
+        WHERE access_token = ?;
+    `)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	_, err = stmt.Exec(accessToken, userModel.AccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	user, err := s.GetUserByAccessToken(accessToken)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+
+	return user, nil
+}
+
 func (s *Storage) UpdateUser(email, spotifyAccessToken, country, name, idSpotify, product string) (*userModel.User, error) {
 	const op = "storage.mysql.UpdateUser"
 

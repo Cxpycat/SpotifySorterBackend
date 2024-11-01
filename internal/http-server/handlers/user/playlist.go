@@ -5,7 +5,6 @@ import (
 	jwtMiddleware "SpotifySorter/internal/http-server/middleware/jwt"
 	"SpotifySorter/internal/lib/client/spotify"
 	sl "SpotifySorter/internal/lib/logger/slog"
-	"SpotifySorter/internal/storage"
 	"encoding/json"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
@@ -70,7 +69,7 @@ func GetAllPlaylists(log *slog.Logger, user User) http.HandlerFunc {
 			return
 		}
 
-		response, err := spotify.GetRequest(log, userData.AccessToken, "users/"+userData.IdSpotify+"/playlists")
+		response, err := spotify.GetRequest(log, userData.SpotifyAccessToken, "users/"+userData.IdSpotify+"/playlists")
 
 		if err != nil {
 			log.Error("failed to get all playlists from Spotify", sl.Err(err))
@@ -193,23 +192,15 @@ func GetPlaylistById(log *slog.Logger, user User) http.HandlerFunc {
 
 		log = log.With(slog.String("op", op))
 
-		email := r.URL.Query().Get("email")
-		if email == "" {
-			log.Error("email parameter is missing")
-			render.JSON(w, r, resp.Error("email parameter is required"))
-			return
-		}
-
-		userData, err := user.GetUserByEmail(email)
-		if err != nil {
-			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
-			render.JSON(w, r, resp.Error(storage.ErrUserNotFound.Error()))
+		userData := jwtMiddleware.GetUserFromContext(r.Context())
+		if userData == nil {
+			http.Error(w, "User not found", http.StatusUnauthorized)
 			return
 		}
 
 		id := chi.URLParam(r, "id")
 
-		response, err := spotify.GetRequest(log, userData.AccessToken, "playlists/"+id+"/tracks/")
+		response, err := spotify.GetRequest(log, userData.SpotifyAccessToken, "playlists/"+id+"/tracks/")
 		if err != nil {
 			log.Error("Error getting playlist by ID", sl.Err(err))
 			http.Error(w, "Error getting playlist by ID", http.StatusInternalServerError)

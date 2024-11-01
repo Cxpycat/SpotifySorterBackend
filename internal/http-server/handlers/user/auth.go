@@ -24,6 +24,7 @@ type User interface {
 	SaveUser(email, accessToken, spotifyAccessToken, country, name, idSpotify, product string) (*userModel.User, error)
 	GetUserByEmail(email string) (*userModel.User, error)
 	UpdateUser(email, spotifyAccessToken, country, name, idSpotify, product string) (*userModel.User, error)
+	UpdateAccessTokenUser(accessToken string, userModel *userModel.User) (*userModel.User, error)
 }
 
 func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
@@ -96,6 +97,18 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 			if err != nil {
 				log.Error("failed to update user", sl.Err(err))
 				render.JSON(w, r, resp.Error("failed to update user"))
+				return
+			}
+			token, err := GenerateToken()
+			if err != nil {
+				log.Error("failed to generate JWT", sl.Err(err))
+				render.JSON(w, r, resp.Error("failed to generate JWT"))
+				return
+			}
+			savedUser, err = user.UpdateAccessTokenUser(token, savedUser)
+			if err != nil {
+				log.Error("failed to update access token user", sl.Err(err))
+				render.JSON(w, r, resp.Error("failed to update access token user"))
 				return
 			}
 		}
@@ -176,5 +189,5 @@ func GenerateToken() (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte("your-secret-key"))
+	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 }

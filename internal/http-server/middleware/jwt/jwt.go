@@ -1,11 +1,13 @@
 package jwt
 
 import (
+	resp "SpotifySorter/internal/api/response"
 	userModel "SpotifySorter/models"
 	"context"
 	"net/http"
 	"strings"
 
+	"github.com/go-chi/render"
 	"github.com/golang-jwt/jwt/v4"
 )
 
@@ -21,7 +23,7 @@ func JWTMiddleware(secret string, user User) func(next http.Handler) http.Handle
 			// Извлекаем токен из заголовка Authorization
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				http.Error(w, "missing authorization header", http.StatusUnauthorized)
+				render.JSON(w, r, resp.Unauthorized("missing authorization header"))
 				return
 			}
 
@@ -47,10 +49,10 @@ func JWTMiddleware(secret string, user User) func(next http.Handler) http.Handle
 			if err != nil {
 				if ve, ok := err.(*jwt.ValidationError); ok {
 					if ve.Errors&jwt.ValidationErrorExpired != 0 {
-						http.Error(w, "token expired", http.StatusUnauthorized)
+						render.JSON(w, r, resp.Unauthorized("token expired"))
 						return
 					}
-					http.Error(w, "invalid token", http.StatusUnauthorized)
+					render.JSON(w, r, resp.Unauthorized("invalid token"))
 					return
 				}
 				http.Error(w, "invalid token", http.StatusUnauthorized)
@@ -60,7 +62,7 @@ func JWTMiddleware(secret string, user User) func(next http.Handler) http.Handle
 			// Добавляем данные о пользователе в контекст запроса
 			user, err := user.GetUserByAccessToken(tokenString)
 			if err != nil {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				render.JSON(w, r, resp.Unauthorized("Unauthorized"))
 				return
 			}
 

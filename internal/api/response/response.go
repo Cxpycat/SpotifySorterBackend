@@ -13,8 +13,9 @@ type Response struct {
 }
 
 const (
-	StatusOK    = "OK"
-	StatusError = "Error"
+	StatusOK           = "OK"
+	StatusError        = "Error"
+	StatusUnauthorized = "Unauthorized"
 )
 
 func OK() Response {
@@ -26,6 +27,13 @@ func OK() Response {
 func Error(msg string) Response {
 	return Response{
 		Status: StatusError,
+		Error:  msg,
+	}
+}
+
+func Unauthorized(msg string) Response {
+	return Response{
+		Status: StatusUnauthorized,
 		Error:  msg,
 	}
 }
