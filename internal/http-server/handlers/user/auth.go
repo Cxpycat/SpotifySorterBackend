@@ -4,8 +4,8 @@ import (
 	resp "SpotifySorter/internal/api/response"
 	"SpotifySorter/internal/lib/client/spotify"
 	sl "SpotifySorter/internal/lib/logger/slog"
-	"SpotifySorter/internal/storage"
 	UserModel "SpotifySorter/models"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -34,10 +34,7 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.user.AuthUser"
-
-		log = log.With(
-			slog.String("op", op),
-		)
+		log = log.With(slog.String("op", op))
 
 		var req Request
 		err := render.DecodeJSON(r.Body, &req)
@@ -66,14 +63,19 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 			render.JSON(w, r, resp.Error("failed to get user data"))
 			return
 		}
-		existingUser, err := user.GetUserByEmail(userData.Email)
-		if err != nil {
-			log.Error(storage.ErrUserNotFound.Error(), sl.Err(err))
-			render.JSON(w, r, resp.Error(storage.ErrUserNotFound.Error()))
-			return
-		}
+		_, err = user.GetUserByEmail(userData.Email)
+		if errors.Is(err, sql.ErrNoRows) {
+			savedUser, err := user.SaveUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.Href, userData.IdSpotify, userData.Product, userData.Uri)
+			if err != nil {
+				log.Error("failed to save user", sl.Err(err))
+				render.JSON(w, r, resp.Error("failed to save user"))
+				return
+			}
+			userData.Id = savedUser.Id
 
-		if existingUser != nil {
+			render.JSON(w, r, userData)
+			return
+		} else {
 			updatedUser, err := user.UpdateUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.Href, userData.Product, userData.Uri)
 			if err != nil {
 				log.Error("failed to update user", sl.Err(err))
@@ -83,16 +85,6 @@ func AuthUser(log *slog.Logger, user User) http.HandlerFunc {
 			render.JSON(w, r, updatedUser)
 			return
 		}
-
-		savedUser, err := user.SaveUser(userData.Email, accessCredentials.AccessToken, userData.Country, userData.Name, userData.Href, userData.IdSpotify, userData.Product, userData.Uri)
-		if err != nil {
-			log.Error("failed to save user", sl.Err(err))
-			render.JSON(w, r, resp.Error("failed to save user"))
-			return
-		}
-		userData.Id = savedUser.Id
-
-		render.JSON(w, r, userData)
 	}
 }
 

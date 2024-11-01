@@ -3,6 +3,7 @@ package mysql
 import (
 	UserModel "SpotifySorter/models"
 	"database/sql"
+	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -98,20 +99,9 @@ func (s *Storage) SaveUser(email, accessToken, country, name, href, idSpotify, p
 }
 
 func (s *Storage) GetUserByEmail(email string) (*UserModel.User, error) {
-	const op = "storage.mysql.GetUserByEmail"
-
-	stmt, err := s.db.Prepare(`
-        SELECT id, name, email, access_token, country, href, id_spotify, product, uri 
-        FROM users
-        WHERE email = ?;
-    `)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
-	}
-	defer stmt.Close()
+	stmt, err := s.db.Prepare(`SELECT id, name, email, access_token, country, href, id_spotify, product, uri FROM users WHERE email = ?`)
 
 	var user UserModel.User
-
 	row := stmt.QueryRow(email)
 	err = row.Scan(
 		&user.Id,
@@ -126,7 +116,11 @@ func (s *Storage) GetUserByEmail(email string) (*UserModel.User, error) {
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		} else {
+			return nil, err
+		}
 	}
 
 	return &user, nil
